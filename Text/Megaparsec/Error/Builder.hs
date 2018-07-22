@@ -22,9 +22,6 @@ module Text.Megaparsec.Error.Builder
   ( -- * Top-level helpers
     err
   , errFancy
-    -- * Error position
-  , posI
-  , posN
     -- * Error components
   , utok
   , utoks
@@ -42,13 +39,10 @@ where
 
 import Data.Data (Data)
 import Data.List.NonEmpty (NonEmpty (..))
-import Data.Proxy
 import Data.Set (Set)
 import Data.Typeable (Typeable)
 import GHC.Generics
 import Text.Megaparsec.Error
-import Text.Megaparsec.Pos
-import Text.Megaparsec.Stream
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Set           as E
 
@@ -91,45 +85,23 @@ instance Ord e => Monoid (EF e) where
 ----------------------------------------------------------------------------
 -- Top-level helpers
 
--- | Assemble a 'ParseError' from source position and @'ET' t@ value. To
--- create source position, two helpers are available: 'posI' and 'posN'.
--- @'ET' t@ is a monoid and can be assembled by combining primitives
--- provided by this module, see below.
+-- | Assemble a 'ParseError' from offset and @'ET' t@ value. @'ET' t@ is a
+-- monoid and can be assembled by combining primitives provided by this
+-- module, see below.
 
 err
-  :: SourcePos         -- ^ 'ParseError' position
+  :: Int               -- ^ 'ParseError' offset
   -> ET t              -- ^ Error components
   -> ParseError t e    -- ^ Resulting 'ParseError'
-err pos (ET us ps) = TrivialError pos us ps
+err p (ET us ps) = TrivialError p us ps
 
 -- | Like 'err', but constructs a “fancy” 'ParseError'.
 
 errFancy
-  :: SourcePos         -- ^ 'ParseError' position
+  :: Int               -- ^ 'ParseError' offset
   -> EF e              -- ^ Error components
   -> ParseError t e    -- ^ Resulting 'ParseError'
-errFancy pos (EF xs) = FancyError pos xs
-
-----------------------------------------------------------------------------
--- Error position
-
--- | Initial source position with empty file name.
-
-posI :: SourcePos
-posI = initialPos ""
-
--- | @'posN' n s@ returns source position achieved by applying 'advanceN'
--- method corresponding to the type of stream @s@.
-
-posN :: forall s. Stream s
-  => Int
-  -> s
-  -> SourcePos
-posN n s =
-  case takeN_ n s of
-    Nothing -> posI
-    Just (ts, _) ->
-      advanceN (Proxy :: Proxy s) defaultTabWidth (initialPos "") ts
+errFancy p (EF xs) = FancyError p xs
 
 ----------------------------------------------------------------------------
 -- Error components

@@ -126,7 +126,7 @@ streamDelta
   :: State s           -- ^ State of parser before consumption
   -> State s           -- ^ State of parser after consumption
   -> Int               -- ^ Number of consumed tokens
-streamDelta s0 s1 = stateTokensProcessed s1 - stateTokensProcessed s0
+streamDelta s0 s1 = stateOffset s1 - stateOffset s0
 
 -- | Extract a given number of tokens from the stream.
 

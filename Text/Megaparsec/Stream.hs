@@ -22,11 +22,8 @@ module Text.Megaparsec.Stream
   ( Stream (..) )
 where
 
-import Data.List (foldl')
 import Data.Proxy
-import Data.Semigroup ((<>))
 import Data.Word (Word8)
-import Text.Megaparsec.Pos
 import qualified Data.ByteString      as B
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text            as T
@@ -84,53 +81,6 @@ class (Ord (Token s), Ord (Tokens s)) => Stream s where
   chunkEmpty pxy ts = chunkLength pxy ts <= 0
   {-# INLINE chunkEmpty #-}
 
-  -- | Set source position __at__ given token. By default, the given
-  -- 'SourcePos' (second argument) is just returned without looking at the
-  -- token. This method is important when your stream is a collection of
-  -- tokens where every token knows where it begins in the original input.
-
-  positionAt1
-    :: Proxy s         -- ^ 'Proxy' clarifying the type of stream
-    -> SourcePos       -- ^ Current position
-    -> Token s         -- ^ Current token
-    -> SourcePos       -- ^ Position of the token
-  positionAt1 Proxy = defaultPositionAt
-  {-# INLINE positionAt1 #-}
-
-  -- | The same as 'positionAt1', but for chunks of the stream. The function
-  -- should return the position where the entire chunk begins. Again, by
-  -- default the second argument is returned without modifications and the
-  -- chunk is not looked at.
-
-  positionAtN
-    :: Proxy s         -- ^ 'Proxy' clarifying the type of stream
-    -> SourcePos       -- ^ Current position
-    -> Tokens s        -- ^ Current chunk
-    -> SourcePos       -- ^ Position of the chunk
-  positionAtN Proxy = defaultPositionAt
-  {-# INLINE positionAtN #-}
-
-  -- | Advance position given a single token. The returned position is the
-  -- position right after the token, or the position where the token ends.
-
-  advance1
-    :: Proxy s         -- ^ 'Proxy' clarifying the type of stream
-    -> Pos             -- ^ Tab width
-    -> SourcePos       -- ^ Current position
-    -> Token s         -- ^ Current token
-    -> SourcePos       -- ^ Advanced position
-
-  -- | Advance position given a chunk of stream. The returned position is
-  -- the position right after the chunk, or the position where the chunk
-  -- ends.
-
-  advanceN
-    :: Proxy s         -- ^ 'Proxy' clarifying the type of stream
-    -> Pos             -- ^ Tab width
-    -> SourcePos       -- ^ Current position
-    -> Tokens s        -- ^ Current token
-    -> SourcePos       -- ^ Advanced position
-
   -- | Extract a single token form the stream. Return 'Nothing' if the
   -- stream is empty.
 
@@ -161,6 +111,8 @@ class (Ord (Token s), Ord (Tokens s)) => Stream s where
 
   takeWhile_ :: (Token s -> Bool) -> s -> (Tokens s, s)
 
+  -- TODO scan_
+
 instance Stream String where
   type Token String = Char
   type Tokens String = String
@@ -169,8 +121,6 @@ instance Stream String where
   chunkToTokens Proxy = id
   chunkLength Proxy = length
   chunkEmpty Proxy = null
-  advance1 Proxy = defaultAdvance1
-  advanceN Proxy w = foldl' (defaultAdvance1 w)
   take1_ [] = Nothing
   take1_ (t:ts) = Just (t, ts)
   takeN_ n s
@@ -187,8 +137,6 @@ instance Stream B.ByteString where
   chunkToTokens Proxy = B.unpack
   chunkLength Proxy = B.length
   chunkEmpty Proxy = B.null
-  advance1 Proxy = defaultAdvance1
-  advanceN Proxy w = B.foldl' (defaultAdvance1 w)
   take1_ = B.uncons
   takeN_ n s
     | n <= 0    = Just (B.empty, s)
@@ -204,8 +152,6 @@ instance Stream BL.ByteString where
   chunkToTokens Proxy = BL.unpack
   chunkLength Proxy = fromIntegral . BL.length
   chunkEmpty Proxy = BL.null
-  advance1 Proxy = defaultAdvance1
-  advanceN Proxy w = BL.foldl' (defaultAdvance1 w)
   take1_ = BL.uncons
   takeN_ n s
     | n <= 0    = Just (BL.empty, s)
@@ -221,8 +167,6 @@ instance Stream T.Text where
   chunkToTokens Proxy = T.unpack
   chunkLength Proxy = T.length
   chunkEmpty Proxy = T.null
-  advance1 Proxy = defaultAdvance1
-  advanceN Proxy w = T.foldl' (defaultAdvance1 w)
   take1_ = T.uncons
   takeN_ n s
     | n <= 0    = Just (T.empty, s)
@@ -238,44 +182,9 @@ instance Stream TL.Text where
   chunkToTokens Proxy = TL.unpack
   chunkLength Proxy = fromIntegral . TL.length
   chunkEmpty Proxy = TL.null
-  advance1 Proxy = defaultAdvance1
-  advanceN Proxy w = TL.foldl' (defaultAdvance1 w)
   take1_ = TL.uncons
   takeN_ n s
     | n <= 0    = Just (TL.empty, s)
     | TL.null s = Nothing
     | otherwise = Just (TL.splitAt (fromIntegral n) s)
   takeWhile_ = TL.span
-
-----------------------------------------------------------------------------
--- Helpers
-
--- | Default positioning function designed to work with simple streams where
--- tokens do not contain info about their position in the stream. Thus it
--- just returns the given 'SourcePos' without re-positioning.
-
-defaultPositionAt :: SourcePos -> a -> SourcePos
-defaultPositionAt pos _ = pos
-{-# INLINE defaultPositionAt #-}
-
--- | Update a source position given a token. The first argument specifies
--- the tab width. If the character is a newline (\'\\n\') the line number is
--- incremented by 1 and column number is reset to 1. If the character is a
--- tab (\'\\t\') the column number is incremented to the nearest tab
--- position. In all other cases, the column is incremented by 1.
-
-defaultAdvance1 :: Enum t
-  => Pos               -- ^ Tab width
-  -> SourcePos         -- ^ Current position
-  -> t                 -- ^ Current token
-  -> SourcePos         -- ^ Incremented position
-defaultAdvance1 width (SourcePos n l c) t = npos
-  where
-    w  = unPos width
-    c' = unPos c
-    npos =
-      case fromEnum t of
-        10 -> SourcePos n (l <> pos1) pos1
-        9  -> SourcePos n l (mkPos $ c' + w - ((c' - 1) `rem` w))
-        _  -> SourcePos n l (c <> pos1)
-{-# INLINE defaultAdvance1 #-}
