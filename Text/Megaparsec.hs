@@ -108,7 +108,6 @@ module Text.Megaparsec
   , getTokensProcessed
   , setTokensProcessed
   , getTabWidth
-  , setTabWidth
   , setParserState )
 where
 
@@ -265,9 +264,7 @@ runParserT' p s = do
     Error e ->
       let bundle = ParseErrorBundle
             { bundleErrors = e :| []
-            , bundleTabWidth = stateTabWidth s
-            , bundleInput = stateInput s
-            , bundleSourcePos = statePos s
+            , bundlePosState = statePosState s
             }
       in (s', Left bundle)
 
@@ -275,10 +272,14 @@ runParserT' p s = do
 
 initialState :: String -> s -> State s
 initialState name s = State
-  { stateInput           = s
-  , statePos             = initialPos name
-  , stateTokensProcessed = 0
-  , stateTabWidth        = defaultTabWidth }
+  { stateInput  = s
+  , stateOffset = 0
+  , statePosState = PosState
+    { pstateInput = s
+    , pstateSourcePos = initialPos name
+    , pstateTabWidth = defaultTabWidth
+    }
+  }
 
 ----------------------------------------------------------------------------
 -- Derivatives of primitive combinators
@@ -459,10 +460,11 @@ match p = do
 
 -- | Specify how to process 'ParseError's that happen inside of this
 -- wrapper. As a side effect of the current implementation changing
--- 'errorPos' with this combinator will also change the final 'statePos' in
--- the parser state (try to avoid that because 'statePos' will go out of
--- sync with factual position in the input stream, which is probably OK if
--- you finish parsing right after that, but be warned).
+-- 'errorOffset' with this combinator will also change the final
+-- 'stateOffset' in the parser state (try to avoid that because
+-- 'stateOffset' will go out of sync with factual position in the input
+-- stream, which is probably OK if you finish parsing right after that, but
+-- be warned).
 --
 -- @since 5.3.0
 
@@ -476,11 +478,11 @@ region f m = do
   case r of
     Left err ->
       case f err of
-        TrivialError pos us ps -> do
-          updateParserState $ \st -> st { statePos = pos }
+        TrivialError o us ps -> do
+          updateParserState $ \st -> st { stateOffset = o }
           failure us ps
-        FancyError pos xs -> do
-          updateParserState $ \st -> st { statePos = pos }
+        FancyError o xs -> do
+          updateParserState $ \st -> st { stateOffset = o }
           fancyFailure xs
     Right x -> return x
 {-# INLINEABLE region #-}
@@ -518,7 +520,7 @@ getInput = stateInput <$> getParserState
 -- | @'setInput' input@ continues parsing with @input@.
 
 setInput :: MonadParsec e s m => s -> m ()
-setInput s = updateParserState (\(State _ pos tp w) -> State s pos tp w)
+setInput s = updateParserState (\(State _ o pst) -> State s o pst)
 {-# INLINE setInput #-}
 
 -- | Return the current source position.
@@ -582,16 +584,6 @@ setTokensProcessed tp = updateParserState $ \(State s pos _ w) ->
 getTabWidth :: MonadParsec e s m => m Pos
 getTabWidth = stateTabWidth <$> getParserState
 {-# INLINE getTabWidth #-}
-
--- | Set tab width, avoid changing tab width in the middle of parsing if at
--- all possible as it'll screw up parse error pretty-printing.
---
--- See also: 'getTabWidth'.
-
-setTabWidth :: MonadParsec e s m => Pos -> m ()
-setTabWidth w = updateParserState $ \(State s pos tp _) ->
-  State s pos tp w
-{-# INLINE setTabWidth #-}
 
 -- | @'setParserState' st@ sets the parser state to @st@.
 --
